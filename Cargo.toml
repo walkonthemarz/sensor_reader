@@ -1,0 +1,9 @@
+[package]
+name = "sensor_reader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serialport = "4.6"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
