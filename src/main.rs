@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use dotenvy::dotenv;
 use serde::Serialize;
 use serialport;
+use std::env;
 use std::io::{self, Read};
 use std::time::Duration;
 
@@ -90,6 +92,7 @@ fn parse_frame(buffer: &[u8]) -> Option<SensorData> {
 }
 
 fn main() -> Result<()> {
+    dotenv().ok(); // Load .env file
     let args = Args::parse();
     let client = reqwest::blocking::Client::new();
 
@@ -136,9 +139,22 @@ fn main() -> Result<()> {
                         if let Some(data) = parse_frame(frame_bytes) {
                             println!("Received: {:?}", data);
 
-                            // Send to server
-                            match client.post(&args.server_url).json(&data).send() {
-                                Ok(_) => println!("Sent to server"),
+                            // Send to server (include `x-api-key` if provided in env)
+                            let mut req = client.post(&args.server_url).json(&data);
+                            if let Ok(api_key) = env::var("SENSOR_API_KEY") {
+                                if !api_key.is_empty() {
+                                    req = req.header("x-api-key", api_key);
+                                }
+                            }
+
+                            match req.send() {
+                                Ok(resp) => {
+                                    if resp.status().is_success() {
+                                        println!("Sent to server");
+                                    } else {
+                                        eprintln!("Server returned error: {}", resp.status());
+                                    }
+                                }
                                 Err(e) => eprintln!("Failed to send to server: {}", e),
                             }
 
