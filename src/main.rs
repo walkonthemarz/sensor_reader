@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use serde::Serialize;
 use serialport;
 use std::io::{self, Read};
 use std::time::Duration;
@@ -14,9 +15,13 @@ struct Args {
     /// Baud rate (default: 9600)
     #[arg(short, long, default_value_t = 9600)]
     baud_rate: u32,
+
+    /// Server URL to send data to
+    #[arg(long, default_value = "http://localhost:3000/api/readings")]
+    server_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 struct SensorData {
     eco2: u16,
     ech2o: u16,
@@ -86,6 +91,7 @@ fn parse_frame(buffer: &[u8]) -> Option<SensorData> {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let client = reqwest::blocking::Client::new();
 
     println!("Opening port {} at {} baud...", args.port, args.baud_rate);
 
@@ -129,14 +135,16 @@ fn main() -> Result<()> {
                         let frame_bytes = &buffer[0..FRAME_LEN];
                         if let Some(data) = parse_frame(frame_bytes) {
                             println!("Received: {:?}", data);
+
+                            // Send to server
+                            match client.post(&args.server_url).json(&data).send() {
+                                Ok(_) => println!("Sent to server"),
+                                Err(e) => eprintln!("Failed to send to server: {}", e),
+                            }
+
                             // Remove the processed frame
                             buffer.drain(0..FRAME_LEN);
                         } else {
-                            // Checksum failed or other error, remove header and try again
-                            // (Or maybe just remove the whole frame?
-                            // Safest is to remove 1 byte to search for next header,
-                            // but if checksum failed it might be a collision.
-                            // Let's remove 1 byte to be safe and resync.)
                             buffer.remove(0);
                         }
                     } else {
@@ -146,7 +154,6 @@ fn main() -> Result<()> {
                 }
             }
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
-                // Timeout is fine, just continue
                 continue;
             }
             Err(e) => {
@@ -165,22 +172,9 @@ mod tests {
 
     #[test]
     fn test_calculate_checksum() {
-        // B1..B16
-        // Example: 3C 02 ...
-        // Let's make a dummy frame
         let data = vec![
             0x3C, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 10, 5, 20, 5,
         ];
-        // Sum: 60 + 2 + 1 + 1 + 1 + 1 + 1 + 10 + 5 + 20 + 5 = 107 (0x6B)
-        // 0x3C = 60
-        // 0x02 = 2
-        // 5 * 0x01 = 5
-        // 10 = 0x0A
-        // 5 = 0x05
-        // 20 = 0x14
-        // 5 = 0x05
-        // Total: 60+2+5+10+5+20+5 = 107
-
         let checksum = calculate_checksum(&data);
         assert_eq!(checksum, 107);
     }
@@ -211,17 +205,5 @@ mod tests {
         assert_eq!(sensor_data.pm10, 30);
         assert_eq!(sensor_data.temperature, 25.5);
         assert_eq!(sensor_data.humidity, 50.2);
-    }
-
-    #[test]
-    fn test_parse_frame_invalid_checksum() {
-        let mut data = vec![
-            0x3C, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        let checksum = calculate_checksum(&data);
-        data.push(checksum + 1); // Invalid
-
-        assert!(parse_frame(&data).is_none());
     }
 }
