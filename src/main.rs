@@ -19,7 +19,7 @@ struct Args {
     baud_rate: u32,
 
     /// Server URL to send data to
-    #[arg(long, default_value = "http://localhost:3000/api/readings")]
+    #[arg(long, default_value = "https://localhost:3000/api/readings")]
     server_url: String,
 }
 
@@ -94,7 +94,9 @@ fn parse_frame(buffer: &[u8]) -> Option<SensorData> {
 fn main() -> Result<()> {
     dotenv().ok(); // Load .env file
     let args = Args::parse();
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .use_rustls_tls()
+        .build()?;
 
     println!("Opening port {} at {} baud...", args.port, args.baud_rate);
 
