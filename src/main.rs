@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use dotenvy::dotenv;
 use serde::Serialize;
-use serialport;
 use std::env;
 use std::io::{self, Read};
 use std::time::Duration;
@@ -143,10 +142,10 @@ fn main() -> Result<()> {
 
                             // Send to server (include `x-api-key` if provided in env)
                             let mut req = client.post(&args.server_url).json(&data);
-                            if let Ok(api_key) = env::var("SENSOR_API_KEY") {
-                                if !api_key.is_empty() {
-                                    req = req.header("x-api-key", api_key);
-                                }
+                            if let Ok(api_key) = env::var("SENSOR_API_KEY")
+                                && !api_key.is_empty()
+                            {
+                                req = req.header("x-api-key", api_key);
                             }
 
                             match req.send() {
